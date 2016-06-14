@@ -5,11 +5,192 @@
     <link rel="stylesheet" type="text/css" href="https://cdn.mxpnl.com/libs/mixpanel-platform/css/reset.css">
     <link rel="stylesheet" type="text/css" href="https://cdn.mxpnl.com/libs/mixpanel-platform/build/mixpanel-platform.v0.latest.min.css">
     <script src="https://cdn.mxpnl.com/libs/mixpanel-platform/build/mixpanel-platform.v0.latest.min.js"></script>
+    <script src="https://fgnass.github.io/spin.js/spin.min.js"></script>
+    <style>
+      #export {
+        margin-top:5px;
+        float:left;
+        clear:both;
+        padding: 6px 12px;
+        background-color: #61adf0;
+        background-image: -webkit-linear-gradient(#6ab5f2,#53a0ee);
+        background-image: linear-gradient(#6ab5f2,#53a0ee);
+        box-shadow: inset 0 1px 1px #77bdf4,0 2px 2px -1px rgba(0,0,0,0.2);
+        text-transform: uppercase;
+        border: 1px solid #4d93d7;
+        color: #fff;
+        text-shadow: 0 -1px 0 rgba(0,0,0,0.2);
+        border-radius: 3px;
+        cursor: pointer;
+        font-weight: bold;
+        background-image: none;
+        background-color: rgb(50, 187, 189);
+      }
+    </style>
   </head>
   <body class="mixpanel-platform-body">
-    <h1>Hello, World!</h1>
+    <div class="mixpanel-platform-section">
+      <div id="selection">
+        <div id="dateSelect" style="float: left;"></div>
+        <div id="export" style="float: left;" onclick="convertToCSV()">Export</div>
+        <div style="clear: both"></div>
+        <div id="eventName" style="float: left;"></div>
+        <div id="by" class="mixpanel-platform-label" style="margin-left: 10px; display: none;">by</div>
+        <div id="property" style="float: left;"></div>
+        <div style="clear: both;"></div>
+        <div id="dividendInterval" style="float: left;"></div>
+        <div id="over" class="mixpanel-platform-label" style="margin-left: 10px; display: none;">over</div>
+        <div id="divisorInterval" style="float: left;"></div>
+        <div style="clear: both;"></div>
+      </div>
+      <div id="graph">
+        <div style="clear: both;"></div>
+      </div>
+    </div>
     <script>
-      // Run queries and display results here
+     var opts = {
+        lines: 17, // The number of lines to draw
+        length: 0, // The length of each line
+        width: 6, // The line thickness
+        radius: 20, // The radius of the inner circle
+        corners: 1, // Corner roundness (0..1)
+        rotate: 0, // The rotation offset
+        direction: 1, // 1: clockwise, -1: counterclockwise
+        color: '#000', // #rgb or #rrggbb or array of colors
+        speed: 1, // Rounds per second
+        trail: 55, // Afterglow percentage
+        shadow: true, // Whether to render a shadow
+        hwaccel: false, // Whether to use hardware acceleration
+        className: 'spinner', // The CSS class to assign to the spinner
+        zIndex: 2e9, // The z-index (defaults to 2000000000)
+        top: '50%', // Top position relative to parent
+        left: '75%' // Left position relative to parent
+      };
+      var target = document.getElementById('selection');
+      $('#over').show();
+
+      var eventName = $('#eventName').MPEventSelect();
+      var dateSelect = $('#dateSelect').MPDatepicker();
+      var propertySelect = $('#property').MPPropertySelect(); 
+      // Setting our intervals
+      var divisorOptions = {
+        items: [
+          {label: 'Weekly Active Users', value: 'week'},
+          {label: 'Monthly Active Users', value: 'month'},
+        ]
+      };
+
+      var dividendOptions = {
+        items: [
+          {label: 'Daily Active Users', value: 'day'},
+          {label: 'Weekly Active Users', value: 'week'},
+          {label: 'Monthly Active Users', value: 'month'},
+        ]
+      };
+
+      var divisorInterval = $('#divisorInterval').MPSelect(divisorOptions);
+      var dividendInterval = $('#dividendInterval').MPSelect(dividendOptions);
+
+      // Check that eventName is defined
+      var propCheck = function () {
+        if (propertySelect.val()){
+          runQuery();
+        }
+      };
+
+      // Make 2 segmentation queries
+      var runQuery = function() {
+        var dateRange = dateSelect.val();
+        $('#graph').empty();
+        var chart = $('#graph').MPChart({ chartType: 'line' });
+        var spinner = new Spinner(opts).spin(target);
+
+        var dividendParams = {
+          unit: dividendInterval.MPSelect('value'),
+          type: 'unique',
+        }
+        var divisorParams = {
+          unit: divisorInterval.MPSelect('value'),
+          type: 'unique',
+        }
+
+        $.extend(dividendParams, dateRange)
+        $.extend(divisorParams, dateRange)
+
+        var $dividend = MP.api.segment(eventName.val(), propertySelect.val(), dividendParams);
+
+        var $divisor = MP.api.segment(eventName.val(), propertySelect.val(), divisorParams);
+        // Wait till the segmentation queries finish
+        $.when($dividend, $divisor).done(function(dividend, divisor) {
+          var ev = eventName.val()
+          var data = {};
+          // Set our divisor dates and report them backgrounds
+          var divisorVals = divisor.values()
+          var divVals = dividend.values()
+          /* Iterate through each divisor date to check whether it is greater
+             than the dividend. If so divide and store that data on the dividend
+             date. We loop backwards through the divisor to only divide dates
+             that are after our definition of a week
+          */
+          _.each(_.keys(divisorVals), function(divisorProp) {
+            var divisorDates = _.keys(divisorVals[divisorProp]).sort()
+            data[divisorProp] = {}
+            _.each(_.keys(divVals[divisorProp]), function(divDate){
+              _.each(divisorDates, function(divisorDate){
+                if (divDate >= divisorDate) {
+                  
+                  denominator =  divisor.values()[divisorProp][divisorDate];
+                  numerator = divVals[divisorProp][divDate];
+                  if (divisorProp == 'tr-istanbul'){
+                    console.log (denominator)
+                    console.log (numerator)
+                    console.log (numerator/denominator)
+                  }
+                  // Check for dividing by 0, in which case we do not include
+                  data[divisorProp][divDate] = (denominator != 0) ? numerator / denominator : 0;
+                }
+              });
+            });
+          });
+          console.log (data)
+          spinner.stop();
+          $("#loading").hide();
+          window.data = data
+          chart.MPChart('setData', data);
+        });
+      };
+
+      eventName.on('change', function(e, Name){
+        $("#by").show();
+        propertySelect.MPPropertySelect('setEvent', Name);
+        propertySelect.on('change', function(e, selection) {                        // Do something when an option is selected
+          propCheck();
+        })
+      });
+
+      divisorInterval.on('change', propCheck);
+      dividendInterval.on('change', propCheck);
+      dateSelect.on('change', propCheck);
+     
+     function convertToCSV() {
+      if (window.data) {
+        var objArray = window.data;
+        var headerSet = new Set();
+        var dataStr = '';
+        _.each(_.keys(objArray), function(d) { 
+          var rowStr = d;
+          _.each(_.keys(data[d]).sort(), function(date){
+            headerSet.add(date)
+            rowStr += ', ' + data[d][date]
+          })
+          dataStr += rowStr + '\n'
+        })
+        var csvStr = 'Segment';
+        headerSet.forEach(function(k) { csvStr += ', ' + k;})
+        csvStr += '\n' + dataStr
+        window.open( "data:text/csv;charset=utf-8," + escape(csvStr))
+        }
+     }
     </script>
   </body>
 </html>
